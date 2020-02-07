@@ -16,6 +16,10 @@ css: slides.css
 - Bindings for Python, Java...
 - Drivers for all major browsers & platforms
 
+See:
+- <https://selenium.dev/>
+- <https://selenium-python.readthedocs.io/getting-started.html>
+
 ---
 
 ## Installation
