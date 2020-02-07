@@ -1,9 +1,7 @@
 import unittest
-from contextlib import contextmanager
+from time import sleep
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support.expected_conditions import staleness_of
 
 
 class PythonOrgSearch(object):
@@ -12,13 +10,16 @@ class PythonOrgSearch(object):
         driver = self.driver
         driver.get("https://analyzer.cryptosense.com/")
         self.assertIn("Cryptosense", driver.title)
+        sleep(1)
         elem = driver.find_element_by_name("username")
         elem.send_keys("ian@cryptosense.com")
+        sleep(1)
         elem = driver.find_element_by_name("password")
         elem.send_keys("not-my-password")
-        # elem.send_keys(Keys.RETURN)
+        sleep(1)
         elem = driver.find_element_by_name("submit")
         elem.click()
+        sleep(1)
         self.assertIn("Bad login or password", driver.page_source)
 
 class FirefoxTest(PythonOrgSearch, unittest.TestCase):
