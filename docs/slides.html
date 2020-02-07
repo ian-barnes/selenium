@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+
+    <title>Web testing with Selenium</title>
+    <link rel="stylesheet" href="./css/reveal.css" />
+    <link rel="stylesheet" href="./css/theme/moon.css" id="theme" />
+    <link rel="stylesheet" href="./css/highlight/zenburn.css" />
+    <link rel="stylesheet" href="./css/print/paper.css" type="text/css" media="print" />
+    <link rel="stylesheet" href="./assets/slides.css" />
+
+  </head>
+  <body>
+    <div class="reveal">
+      <div class="slides"><section  data-markdown><script type="text/template">
+
+## Web testing with Selenium
+</script></section><section  data-markdown><script type="text/template">
+## What is Selenium?
+
+- Automate interaction with browsers
+- Bindings for Python, Java...
+- Drivers for all major browsers & platforms
+</script></section><section  data-markdown><script type="text/template">
+## Installation
+
+- `sudo apt install python3-selenium`
+- `pip install selenium` (or `pipenv`)
+- Download Chrome & Firefox drivers and copy to `/usr/local/bin`
+  - <https://sites.google.com/a/chromium.org/chromedriver/downloads>
+  - <https://github.com/mozilla/geckodriver/releases>
+</script></section><section  data-markdown><script type="text/template">
+## Simple usage
+
+```python
+from selenium import webdriver
+from selenium.webdriver.common.keys import Keys
+
+driver = webdriver.Firefox() # or Chrome() - open browser window
+driver.get("http://python.org") #          - load page
+
+assert "Python" in driver.title #          - interrogate browser state
+
+elem = driver.find_element_by_name("q") #  - interrogate the DOM
+elem.clear() #                             - clear form field
+elem.send_keys("pycon") #                  - insert data into form field
+elem.send_keys(Keys.RETURN) #              - submit form
+assert "No results found." not in driver.page_source # - search page content
+driver.close() #                           - close browser window
+
+```
+</script></section><section  data-markdown><script type="text/template">
+## Do the same thing in a test
+
+(This uses `unittest` but obviously `pytest` would work too.)
+
+```python
+import unittest
+from selenium import webdriver
+from selenium.webdriver.common.keys import Keys
+
+
+class PythonOrgSearch(object):
+
+    def test_search_in_python_org(self):
+        driver = self.driver
+        driver.get("http://www.python.org")
+        self.assertIn("Python", driver.title)
+        elem = driver.find_element_by_name("q")
+        elem.send_keys("pycon")
+        elem.send_keys(Keys.RETURN)
+        assert "No results found." not in driver.page_source
+```
+</script></section><section  data-markdown><script type="text/template">
+## Test continued...
+
+```python
+class FirefoxTest(PythonOrgSearch, unittest.TestCase):
+    def setUp(self):
+        self.driver = webdriver.Firefox()
+
+    def tearDown(self):
+        self.driver.close()
+
+
+class ChromeTest(PythonOrgSearch, unittest.TestCase):
+    def setUp(self):
+        self.driver = webdriver.Chrome()
+
+    def tearDown(self):
+        self.driver.close()
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
+</script></section><section  data-markdown><script type="text/template">
+## Test CS analyzer login page
+
+As above, except:
+
+```python
+    def test_cs_login_bad_pw(self):
+        driver = self.driver
+        driver.get("https://analyzer.cryptosense.com/")
+        self.assertIn("Cryptosense", driver.title)
+        elem = driver.find_element_by_name("username")
+        elem.send_keys("ian@cryptosense.com")
+        elem = driver.find_element_by_name("password")
+        elem.send_keys("not-my-password")
+        elem.send_keys(Keys.RETURN)
+        self.assertIn("Bad login or password", driver.page_source)
+```
+</script></section><section  data-markdown><script type="text/template">
+## So... that doesn't work
+
+- Chrome passes, Firefox fails
+- Fresh copy of the login page hasn't loaded yet when it checks for the "Bad
+  login..." message
+- Instead the page contains the message "Please log in to access this page."
+  (Why?)
+- Need to wait for page load?
+
+And that's where things start to get complicated...
+
+- Selenium has no way to know that you've triggered a new page load.
+- Maybe your click or "Return" triggered some Javascript within the page.
+</script></section><section  data-markdown><script type="text/template">
+## Waiting for page load
+
+See <http://www.obeythetestinggoat.com/how-to-get-selenium-to-wait-for-page-load-after-a-click.html>
+
+- Use a context manager
+- Wait (with timeout limit) for old page to get stale
+- Only then check the condition
+</script></section><section  data-markdown><script type="text/template">
+## Revised code... should work?
+
+```python
+class PythonOrgSearch(object):
+
+    @contextmanager
+    def wait_for_page_load(self, timeout=30):
+        old_page = self.driver.find_element_by_tag_name('html')
+        yield
+        WebDriverWait(self.driver, timeout).until(staleness_of(old_page))
+
+    def test_cs_login_bad_pw(self):
+        driver = self.driver
+        driver.get("https://analyzer.cryptosense.com/")
+        self.assertIn("Cryptosense", driver.title)
+        elem = driver.find_element_by_name("username")
+        elem.send_keys("ian@cryptosense.com")
+        elem = driver.find_element_by_name("password")
+        elem.send_keys("not-my-password")
+        elem.send_keys(Keys.RETURN)
+        with self.wait_for_page_load(timeout=10):
+            self.assertIn("Bad login or password", driver.page_source)
+```
+
+... but still fails with same error
+</script></section><section  data-markdown><script type="text/template">
+## Try clicking the submit button
+
+```python
+    def test_cs_login_bad_pw(self):
+        driver = self.driver
+        driver.get("https://analyzer.cryptosense.com/")
+        self.assertIn("Cryptosense", driver.title)
+        elem = driver.find_element_by_name("username")
+        elem.send_keys("ian@cryptosense.com")
+        elem = driver.find_element_by_name("password")
+        elem.send_keys("not-my-password")
+        # elem.send_keys(Keys.RETURN)
+        elem = driver.find_element_by_name("submit")
+        elem.click()
+        self.assertIn("Bad login or password", driver.page_source)
+```
+
+... and now the test passes on both browsers
+</script></section><section  data-markdown><script type="text/template">
+## Further possibilities
+
+- Alternative called `puppeteer`, haven't tried it
+- Selenium IDE: Record actions and turn them into scripts
+- Selenium Grid: Run tests on multiple remote machines
+  - Different operating systems
+  - Potentially works on VMs
+  - In principle could automate cross-browser testing
+</script></section><section  data-markdown><script type="text/template"></script></section></div>
+    </div>
+
+    <script src="./js/reveal.js"></script>
+
+    <script>
+      function extend() {
+        var target = {};
+        for (var i = 0; i < arguments.length; i++) {
+          var source = arguments[i];
+          for (var key in source) {
+            if (source.hasOwnProperty(key)) {
+              target[key] = source[key];
+            }
+          }
+        }
+        return target;
+      }
+
+      // Optional libraries used to extend on reveal.js
+      var deps = [
+        { src: './plugin/markdown/marked.js', condition: function() { return !!document.querySelector('[data-markdown]'); } },
+        { src: './plugin/markdown/markdown.js', condition: function() { return !!document.querySelector('[data-markdown]'); } },
+        { src: './plugin/highlight/highlight.js', async: true, callback: function() { hljs.initHighlightingOnLoad(); } },
+        { src: './plugin/zoom-js/zoom.js', async: true },
+        { src: './plugin/notes/notes.js', async: true },
+        { src: './plugin/math/math.js', async: true }
+      ];
+
+      // default options to init reveal.js
+      var defaultOptions = {
+        controls: true,
+        progress: true,
+        history: true,
+        center: true,
+        transition: 'default', // none/fade/slide/convex/concave/zoom
+        dependencies: deps
+      };
+
+      // options from URL query string
+      var queryOptions = Reveal.getQueryHash() || {};
+
+      var options = extend(defaultOptions, {"transition":"none"}, queryOptions);
+    </script>
+
+
+    <script>
+      Reveal.initialize(options);
+    </script>
+  </body>
+</html>
